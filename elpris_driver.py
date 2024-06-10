@@ -5,13 +5,19 @@ import time
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
+import paho.mqtt.client as mqtt
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv("mqtt.env")
 
 MQTT_IP = os.getenv('MQTT_IP')
+MQTT_PORT = os.getenv('MQTT_PORT')
 MQTT_USERNAME = os.getenv('MQTT_USERNAME')
 MQTT_PASSWORD = os.getenv('MQTT_PASSWORD')
+
+# Create client instance
+client = mqtt.Client()
+client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
 HOURS_FOR_DISCHARGE = 3
 UPDATE_AT_MINUTE = ":00"
@@ -53,9 +59,13 @@ def send_data():
     item = formatted_priser[int(hour_start)]
     print(f"I found: {item.price}, Behavior: {item.behavior}, from: {item.time_start}, to: {item.time_end}")
 
-    #
-    # HERE I WILL NEED TO ACCESS A FEW PIECES FOR MQTT COMMUNICATION! IP, USERNAME, PASSWORD.
-    #
+    try:
+        client.connect(MQTT_IP, int(MQTT_PORT))
+    except Exception as e:
+        print("Fault:", str(e))
+
+    print("Connected!")
+
 
     
 # Call schedule every hour at 00
