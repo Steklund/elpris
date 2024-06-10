@@ -13,6 +13,10 @@ class Battery_Behavior(Enum):
     AUTO = 1
     CHARGE = 2     
     DISCHARGE = 3
+    STOPPED_CHARGING = 4
+    STOPPED_DISCHARGING = 5
+
+CURRENT_STATUS = Battery_Behavior.AUTO
 
 HOURS_FOR_DISCHARGE = 3
 UPDATE_AT_MINUTE = ":00"
@@ -39,7 +43,7 @@ def on_message(client, userdata, message):
         payload = json.loads(message.payload.decode("utf-8"))
         if "soc" in payload:
             global GLOBAL_SOC_VALUE
-            GLOBAL_SOC_VALUE = payload["soc"]["val"]
+            GLOBAL_SOC_VALUE = float(payload["soc"]["val"])
             print(f"State of Charge (SOC): {GLOBAL_SOC_VALUE}%")
 
 
@@ -95,9 +99,6 @@ def send_data():
     if priser:
         formatted_priser = format_elpriser(priser)
 
-        # for debugging 
-        #formatted_priser = update_behavior(elpris_debug_list)
-
         for item in formatted_priser:
 
             # Debug print
@@ -112,9 +113,12 @@ def send_data():
     # Access the global variable
     global TRANS_ID
     global GLOBAL_SOC_VALUE
+    global CURRENT_STATUS
 
     charge_reference = MQTT_BATTERY_POWER
     discharge_reference = MQTT_BATTERY_POWER
+
+    print(f"Current state of charge: ({GLOBAL_SOC_VALUE})%")
 
     if(int(GLOBAL_SOC_VALUE) >= 98):
         charge_reference = 0
@@ -149,6 +153,8 @@ def send_data():
             }
         }
         print("Sent auto")
+
+    CURRENT_STATUS = item.behavior
 
     TRANS_ID += 1
     json_payload = json.dumps(payload)
@@ -212,6 +218,7 @@ def update_behavior(lst):
 
 if __name__ == "__main__":
         mqtt_init()
+        time.sleep(20)
         send_data()
         # Run schedule in loop
         while True:
