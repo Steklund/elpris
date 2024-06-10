@@ -16,7 +16,7 @@ class Battery_Behavior(Enum):
     STOPPED_CHARGING = 4
     STOPPED_DISCHARGING = 5
 
-CURRENT_STATUS = Battery_Behavior.AUTO
+CURRENT_STATUS = Battery_Behavior.STOPPED_CHARGING
 
 HOURS_FOR_DISCHARGE = 3
 UPDATE_AT_MINUTE = ":00"
@@ -36,20 +36,42 @@ MQTT_BATTERY_POWER = os.getenv('MQTT_BATTERY_POWER')
 # Funktion som körs när ett meddelande mottas från prenumerationen
 def on_message(client, userdata, message):
     #print("Meddelande mottaget från ämne:", message.topic)
+    payload = json.loads(message.payload.decode("utf-8"))
 
     if(message.topic == "extapi/control/result"):
         print("Meddelande:", str(message.payload.decode("utf-8")))
-    else:
-        payload = json.loads(message.payload.decode("utf-8"))
-        if "soc" in payload:
-            global GLOBAL_SOC_VALUE
-            GLOBAL_SOC_VALUE = float(payload["soc"]["val"])
-            print(f"State of Charge (SOC): {GLOBAL_SOC_VALUE}%")
+    elif("soc" in payload):
+        global GLOBAL_SOC_VALUE
+        global CURRENT_STATUS
+        GLOBAL_SOC_VALUE = float(payload["soc"]["val"])
+        print(f"State of Charge (SOC): {GLOBAL_SOC_VALUE}%")
+        print(f"Current state: {CURRENT_STATUS}")
+        
+        # If the program is currently charging and has reached the limit, stop the charging.
+        if(CURRENT_STATUS == Battery_Behavior.CHARGE and int(GLOBAL_SOC_VALUE) >= 98):
+            CURRENT_STATUS = Battery_Behavior.STOPPED_CHARGING
+            payload = {
+                "transId": str(TRANS_ID),  
+                "cmd": {
+                    "name": "charge",  
+                    "arg": "0"
+                }
+            }
+        elif(CURRENT_STATUS == Battery_Behavior.DISCHARGE and int(GLOBAL_SOC_VALUE) <= 16):
+            CURRENT_STATUS = Battery_Behavior.STOPPED_DISCHARGING
+            payload = {
+                "transId": str(TRANS_ID),
+                "cmd": {
+                    "name": "discharge",
+                    "arg": "0"
+                }
+            }
+
+
 
 
 
 def mqtt_init():
-
     MQTT_IP = os.getenv('MQTT_IP')
     MQTT_PORT = os.getenv('MQTT_PORT')
     MQTT_USERNAME = os.getenv('MQTT_USERNAME')
