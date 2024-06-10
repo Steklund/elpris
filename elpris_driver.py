@@ -6,21 +6,53 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 import paho.mqtt.client as mqtt
+import json
+
+HOURS_FOR_DISCHARGE = 3
+UPDATE_AT_MINUTE = ":00"
+
+TRANS_ID = 1
 
 # Load environment variables from .env file
 load_dotenv("mqtt.env")
 
-MQTT_IP = os.getenv('MQTT_IP')
-MQTT_PORT = os.getenv('MQTT_PORT')
-MQTT_USERNAME = os.getenv('MQTT_USERNAME')
-MQTT_PASSWORD = os.getenv('MQTT_PASSWORD')
-
 # Create client instance
 client = mqtt.Client()
-client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+MQTT_TOPIC = "extapi/control/request"
+MQTT_BATTERY_POWER = os.getenv('MQTT_BATTERY_POWER')
 
-HOURS_FOR_DISCHARGE = 3
-UPDATE_AT_MINUTE = ":00"
+# Funktion som körs när ett meddelande mottas från prenumerationen
+def on_message(client, userdata, message):
+    print("Meddelande mottaget från ämne:", message.topic)
+    print("Meddelande:", str(message.payload.decode("utf-8")))
+
+
+def mqtt_init():
+
+    MQTT_IP = os.getenv('MQTT_IP')
+    MQTT_PORT = os.getenv('MQTT_PORT')
+    MQTT_USERNAME = os.getenv('MQTT_USERNAME')
+    MQTT_PASSWORD = os.getenv('MQTT_PASSWORD')
+
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    # Define callback-function for messages 
+    client.on_message = on_message
+
+    try:
+        client.connect(MQTT_IP, int(MQTT_PORT))
+    except Exception as e:
+        print("Connection fault:", str(e))
+    print("Connected!")
+
+    try:
+        client.subscribe("extapi/control/result")
+    except Exception as e:
+        print("Subscribition fault:", str(e))
+    print("Subsribed!")
+
+    # Start loop to listen to messages
+    client.loop_start()
 
 # Class to represent elpris, contains price, start-time, end-time and battery behavior.
 class Elpris:
@@ -32,9 +64,9 @@ class Elpris:
     
     def determine_behavior(self):
         if self.price < 0:
-            return "Charging"
+            return "charge"
         else:
-            return "Auto"
+            return "auto"
     
     def __str__(self):
         return f"{self.price} SEK/kWh klockan {self.time_start}-{self.time_end} - {self.behavior}"
@@ -59,12 +91,38 @@ def send_data():
     item = formatted_priser[int(hour_start)]
     print(f"I found: {item.price}, Behavior: {item.behavior}, from: {item.time_start}, to: {item.time_end}")
 
-    try:
-        client.connect(MQTT_IP, int(MQTT_PORT))
-    except Exception as e:
-        print("Fault:", str(e))
+    global TRANS_ID  # Access the global variable
 
-    print("Connected!")
+    if(item.behavior == "charge"):
+        payload = {
+            "transId": str(TRANS_ID),  
+            "cmd": {
+                "name": "charge",  
+                "arg": str(MQTT_BATTERY_POWER)
+            }
+        }
+        print("Sent charge")
+    elif(item.behavior == "discharge"):
+        payload = {
+            "transId": str(TRANS_ID),
+            "cmd": {
+                "name": "discharge",
+                "arg": str(MQTT_BATTERY_POWER)
+            }
+        }
+        print("Sent discharge")
+    else:
+        payload = {
+            "transId": str(TRANS_ID),
+            "cmd": {
+                "name": "auto"
+            }
+        }
+        print("Sent auto")
+
+    TRANS_ID += 1
+    json_payload = json.dumps(payload)
+    client.publish(MQTT_TOPIC, json_payload)
 
 
     
@@ -107,17 +165,17 @@ def format_elpriser(priser):
 def update_behavior(lst):
     i = 0
     while i < len(lst):
-        if lst[i].behavior == "Charging":
+        if lst[i].behavior == "charge":
             j = i - 1
             count = 0
-            while j >= 0 and lst[j].behavior != "Charging":
-                if count < HOURS_FOR_DISCHARGE:  # Limit "Discharge" to HOURS_FOR_DISCHARGE before "Charging"
-                    lst[j].behavior = "Discharge"
+            while j >= 0 and lst[j].behavior != "charge":
+                if count < HOURS_FOR_DISCHARGE:  # Limit "discharge" to HOURS_FOR_DISCHARGE before "charge"
+                    lst[j].behavior = "discharge"
                     count += 1
                 else:
                     break
                 j -= 1
-            i = max(j + 1, i + 1)  # Set i to the index after the last "Discharge" or next index
+            i = max(j + 1, i + 1)  # Set i to the index after the last "discharge" or next index
         else:
             i += 1
     return lst
@@ -149,8 +207,8 @@ elpris_debug_list = [
     Elpris(-0.18117, "23:00", "00:00"),
 ]
 
-
 if __name__ == "__main__":
+        mqtt_init()
         send_data()
         # Run schedule in loop
         while True:
