@@ -13,6 +13,8 @@ UPDATE_AT_MINUTE = ":00"
 
 TRANS_ID = 1
 
+GLOBAL_SOC_VALUE = 50
+
 # Load environment variables from .env file
 load_dotenv("mqtt.env")
 
@@ -24,7 +26,15 @@ MQTT_BATTERY_POWER = os.getenv('MQTT_BATTERY_POWER')
 # Funktion som körs när ett meddelande mottas från prenumerationen
 def on_message(client, userdata, message):
     print("Meddelande mottaget från ämne:", message.topic)
-    print("Meddelande:", str(message.payload.decode("utf-8")))
+
+    if(message.topic == "extapi/control/result"):
+        print("Meddelande:", str(message.payload.decode("utf-8")))
+    else:
+        payload = json.loads(message.payload.decode("utf-8"))
+        if "soc" in payload:
+            GLOBAL_SOC_VALUE = payload["soc"]["val"]
+            print(f"State of Charge (SOC): {GLOBAL_SOC_VALUE}%")
+
 
 
 def mqtt_init():
@@ -47,6 +57,7 @@ def mqtt_init():
 
     try:
         client.subscribe("extapi/control/result")
+        client.subscribe("extapi/data/esm")
     except Exception as e:
         print("Subscribition fault:", str(e))
     print("Subsribed!")
@@ -91,14 +102,24 @@ def send_data():
     item = formatted_priser[int(hour_start)]
     print(f"I found: {item.price}, Behavior: {item.behavior}, from: {item.time_start}, to: {item.time_end}")
 
-    global TRANS_ID  # Access the global variable
+    # Access the global variable
+    global TRANS_ID
+    global GLOBAL_SOC_VALUE
+
+    charge_reference = MQTT_BATTERY_POWER
+    discharge_reference = MQTT_BATTERY_POWER
+
+    if(GLOBAL_SOC_VALUE >= 98):
+        charge_reference = 0
+    elif(GLOBAL_SOC_VALUE <= 16):
+        discharge_reference = 0
 
     if(item.behavior == "charge"):
         payload = {
             "transId": str(TRANS_ID),  
             "cmd": {
                 "name": "charge",  
-                "arg": str(MQTT_BATTERY_POWER)
+                "arg": str(charge_reference)
             }
         }
         print("Sent charge")
@@ -107,7 +128,7 @@ def send_data():
             "transId": str(TRANS_ID),
             "cmd": {
                 "name": "discharge",
-                "arg": str(MQTT_BATTERY_POWER)
+                "arg": str(discharge_reference)
             }
         }
         print("Sent discharge")
