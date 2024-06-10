@@ -25,7 +25,7 @@ MQTT_BATTERY_POWER = os.getenv('MQTT_BATTERY_POWER')
 
 # Funktion som körs när ett meddelande mottas från prenumerationen
 def on_message(client, userdata, message):
-    print("Meddelande mottaget från ämne:", message.topic)
+    #print("Meddelande mottaget från ämne:", message.topic)
 
     if(message.topic == "extapi/control/result"):
         print("Meddelande:", str(message.payload.decode("utf-8")))
@@ -109,9 +109,11 @@ def send_data():
     charge_reference = MQTT_BATTERY_POWER
     discharge_reference = MQTT_BATTERY_POWER
 
-    if(GLOBAL_SOC_VALUE >= 98):
+    if(int(GLOBAL_SOC_VALUE) >= 98):
         charge_reference = 0
-    elif(GLOBAL_SOC_VALUE <= 16):
+        print(f"Will ignore charge ({GLOBAL_SOC_VALUE})%")
+    elif(int(GLOBAL_SOC_VALUE) <= 16):
+        print(f"Will ignore discharge ({GLOBAL_SOC_VALUE})%")
         discharge_reference = 0
 
     if(item.behavior == "charge"):
