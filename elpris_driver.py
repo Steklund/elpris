@@ -7,6 +7,12 @@ from dotenv import load_dotenv
 import os
 import paho.mqtt.client as mqtt
 import json
+from enum import Enum
+
+class Battery_Behavior(Enum):
+    AUTO = 1
+    CHARGE = 2     
+    DISCHARGE = 3
 
 HOURS_FOR_DISCHARGE = 3
 UPDATE_AT_MINUTE = ":00"
@@ -32,6 +38,7 @@ def on_message(client, userdata, message):
     else:
         payload = json.loads(message.payload.decode("utf-8"))
         if "soc" in payload:
+            global GLOBAL_SOC_VALUE
             GLOBAL_SOC_VALUE = payload["soc"]["val"]
             print(f"State of Charge (SOC): {GLOBAL_SOC_VALUE}%")
 
@@ -75,9 +82,9 @@ class Elpris:
     
     def determine_behavior(self):
         if self.price < 0:
-            return "charge"
+            return Battery_Behavior.CHARGE
         else:
-            return "auto"
+            return Battery_Behavior.AUTO
     
     def __str__(self):
         return f"{self.price} SEK/kWh klockan {self.time_start}-{self.time_end} - {self.behavior}"
@@ -116,7 +123,7 @@ def send_data():
         print(f"Will ignore discharge ({GLOBAL_SOC_VALUE})%")
         discharge_reference = 0
 
-    if(item.behavior == "charge"):
+    if(item.behavior == Battery_Behavior.CHARGE):
         payload = {
             "transId": str(TRANS_ID),  
             "cmd": {
@@ -125,7 +132,7 @@ def send_data():
             }
         }
         print("Sent charge")
-    elif(item.behavior == "discharge"):
+    elif(item.behavior == Battery_Behavior.DISCHARGE):
         payload = {
             "transId": str(TRANS_ID),
             "cmd": {
@@ -188,47 +195,20 @@ def format_elpriser(priser):
 def update_behavior(lst):
     i = 0
     while i < len(lst):
-        if lst[i].behavior == "charge":
+        if lst[i].behavior == Battery_Behavior.CHARGE:
             j = i - 1
             count = 0
-            while j >= 0 and lst[j].behavior != "charge":
-                if count < HOURS_FOR_DISCHARGE:  # Limit "discharge" to HOURS_FOR_DISCHARGE before "charge"
-                    lst[j].behavior = "discharge"
+            while j >= 0 and lst[j].behavior != Battery_Behavior.CHARGE:
+                if count < HOURS_FOR_DISCHARGE:  # Limit DISCHARGE to HOURS_FOR_DISCHARGE before CHARGE
+                    lst[j].behavior = Battery_Behavior.DISCHARGE
                     count += 1
                 else:
                     break
                 j -= 1
-            i = max(j + 1, i + 1)  # Set i to the index after the last "discharge" or next index
+            i = max(j + 1, i + 1)  # Set i to the index after the last DISCHARGE or next index
         else:
             i += 1
     return lst
-
-elpris_debug_list = [
-    Elpris(0.17556, "00:00", "01:00"),
-    Elpris(-0.1483, "01:00", "02:00"),
-    Elpris(-0.10341, "02:00", "03:00"),
-    Elpris(0.05715, "03:00", "04:00"),
-    Elpris(0.04684, "04:00", "05:00"),
-    Elpris(0.02142, "05:00", "06:00"),
-    Elpris(0.00825, "06:00", "07:00"),
-    Elpris(0.00893, "07:00", "08:00"),
-    Elpris(0.00149, "08:00", "09:00"),
-    Elpris(0.02302, "09:00", "10:00"),
-    Elpris(0.08704, "10:00", "11:00"),
-    Elpris(0.17178, "11:00", "12:00"),
-    Elpris(-0.28367, "12:00", "13:00"),
-    Elpris(-0.37437, "13:00", "14:00"),
-    Elpris(-0.42521, "14:00", "15:00"),
-    Elpris(0.32844, "15:00", "16:00"),
-    Elpris(0.05715, "16:00", "17:00"),
-    Elpris(0.00676, "17:00", "18:00"),
-    Elpris(0.06986, "18:00", "19:00"),
-    Elpris(0.1491, "19:00", "20:00"),
-    Elpris(0.18358, "20:00", "21:00"),
-    Elpris(0.19984, "21:00", "22:00"),
-    Elpris(0.19102, "22:00", "23:00"),
-    Elpris(-0.18117, "23:00", "00:00"),
-]
 
 if __name__ == "__main__":
         mqtt_init()
